@@ -7,4 +7,6 @@ urlpatterns = [
     url(r'^add_student$', views.add_student, name='add_student'),
     url(r'^add_opinion$', views.add_opinion, name='add_opinion'),
     url(r'^get_top_opinion_list$', views.get_top_opinion_list, name='get_top_opinion_list'),
+    url(r'^get_latest_opinion$', views.get_latest_opinion, name='get_latest_opinion'),
+    url(r'^get_neighbors_with_influece_values$', views.get_neighbors_with_influece_values, name='get_neighbors_with_influece_values'),
 ]
