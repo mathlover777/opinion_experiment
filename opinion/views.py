@@ -5,8 +5,13 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from django.utils import timezone
 from django.utils.dateformat import format
-
+import os, tempfile, zipfile
+from django.core.servers.basehttp import FileWrapper
+import time
+from django.core.urlresolvers import resolve
+import random
 import pprint
+from django.contrib.sites.shortcuts import get_current_site
 
 ID_FILE = 'idlist.json'
 GRAPH_FILE = 'graph.json'
@@ -21,8 +26,21 @@ def save_json(filename,data):
 		json.dump(data,fp = fp,indent = 4)
 	return
 
+def serve_html(file_path):
+	html = ""
+	with open(file_path,'rb') as f:
+		html = f.read()
+	return html
+
+@csrf_exempt
 def index(request):
-    return HttpResponse("Hello, world. You're at the polls index.")
+	html = serve_html('opinion/static/index.html')
+	return HttpResponse(html)
+
+@csrf_exempt
+def dashboard(request):
+	html = serve_html('opinion/static/restricted/dashboard.html')
+	return HttpResponse(html)
 
 def get_params(request,param_list):
 	# <(param_name,default value if unable to extract)>
@@ -109,7 +127,8 @@ def get_top_opinion_list(request):
 		return_object['status'] = 'success'
 		if opinions_to_return < 1:
 			return_object['msg'] = 'no opinions found'
-			return return_object
+			return_object['top_opinion_list'] = ''
+			return HttpResponse(json.dumps(return_object,indent = 4))
 		top_opinion_list = sorted_by_time_opinion_list[0:opinions_to_return]
 		opinion_json = json.dumps([json.dumps(x.get_as_dict()) for x in top_opinion_list])
 		return_object['top_opinion_list'] = opinion_json
@@ -131,7 +150,8 @@ def get_latest_opinion(request):
 		return_object['status'] = 'success'
 		if opinions_to_return < 1:
 			return_object['msg'] = 'no opinions found'
-			return return_object
+			return_object['top_opinion_list'] = ''
+			return HttpResponse(json.dumps(return_object,indent = 4))
 		top_opinion_list = sorted_by_time_opinion_list[0:opinions_to_return]
 		opinion_json = json.dumps([json.dumps(x.get_as_dict()) for x in top_opinion_list])
 		return_object['top_opinion_list'] = opinion_json
@@ -152,7 +172,7 @@ def get_neighbor_list(student_id):
 	return []
 
 @csrf_exempt
-def get_neighbors_with_influece_values(request):
+def get_neighbors_with_influence_values(request):
 	try:
 		param_dict = get_params(request,[('student_id',None)])
 		student_id = param_dict['student_id'].lower()
@@ -165,6 +185,54 @@ def get_neighbors_with_influece_values(request):
 		return_object = {}
 		return_object['neighbor_list'] = json.dumps(neighbor_list)
 		return_object['success'] = 'true'
+		return HttpResponse(json.dumps(return_object,indent = 4))
+	except Exception as e:
+		return HttpResponse(get_error_json(str(e)))
+
+def send_file(filename):
+	# filename = __file__ # Select your file here.                                
+	wrapper = FileWrapper(file(filename))
+	response = HttpResponse(wrapper, content_type='text/plain')
+	response['Content-Length'] = os.path.getsize(filename)
+	return response
+
+def dump_data_till_now_in_file(filename):
+	opinion_set = opinion_list.objects.all()
+	with open(filename,"wb") as f:
+		sorted_by_time_opinion_list = sorted(opinion_set,reverse = True,key = lambda x:int(format(x.record_time, 'U')))
+		for opinion in sorted_by_time_opinion_list:
+			text = json.dumps(opinion.get_as_dict())
+			f.write(text + "\n")
+	return
+
+@csrf_exempt
+def download_data(request):
+	try:
+		filename = str(int(time.time())) + '_' + str(random.randint(1000,1000000)) + '.txt'
+		filepath = 'opinion/static/data/' + filename
+		dump_data_till_now_in_file(filepath)
+		return_object = {}
+		current_url = 'http://' + str(get_current_site(request))
+		return_object["msg"] = "data ready for download!"
+		return_object["success"] = "true"
+		return_object["filelink"] = current_url + '/static/data/' + filename
+		return HttpResponse(json.dumps(return_object,indent = 4))
+	except Exception as e:
+		return HttpResponse(get_error_json(str(e)))
+
+@csrf_exempt
+def reset_and_download_data(request):
+	# this will clear the models but will create a backup of the data in the backup folder
+	try:
+		filename = str(int(time.time())) + '_' + str(random.randint(1000,1000000)) + '.txt'
+		filepath = 'opinion/static/data/' + filename
+		dump_data_till_now_in_file(filepath)
+		opinion_list.objects.all().delete() # this will clear the DB so make backup !!
+		return_object = {}
+		current_url = 'http://' + str(get_current_site(request))
+		return_object["msg"] = "DB cleaned and backup taken !"
+		return_object["success"] = "true"
+		return_object["filelink"] = current_url + '/static/data/' + filename
 		return HttpResponse(json.dumps(return_object,indent = 4))
 	except Exception as e:
 		return HttpResponse(get_error_json(str(e)))	
